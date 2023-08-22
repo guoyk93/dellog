@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/guoyk93/rg"
 )
@@ -28,21 +29,27 @@ func main() {
 	flag.BoolVar(&optDry, "dry", false, "dry run")
 	flag.Parse()
 
-	rules := rg.Must(LoadRules(optConf))
-	ExpandRules(&rules)
+	rules := rg.Must(LoadRuleDir(optConf))
+
+	now := time.Now()
 
 	for _, rule := range rules {
-		for _, matched := range rg.Must(filepath.Glob(rule.Pattern)) {
-			log.Println("found:", matched)
-			switch EvaluateDays(matched, rule.Days) {
-			case ActionUnknownDate:
-				log.Println("unknown date:", matched)
-			case ActionSkip:
-				log.Println("skip:", matched)
-			case ActionRemove:
-				log.Println("remove:", matched)
-				if !optDry {
-					_ = os.Remove(matched)
+		for _, match := range rule.Match {
+			for _, file := range rg.Must(filepath.Glob(match)) {
+				log.Println("found:", file)
+				switch EvaluateRule(file, rule, now) {
+				case ActionSkip:
+					log.Println("skip:", file)
+				case ActionRemove:
+					log.Println("remove:", file)
+					if !optDry {
+						_ = os.Remove(file)
+					}
+				case ActionTruncate:
+					log.Println("truncate:", file)
+					if !optDry {
+						_ = os.Truncate(file, 0)
+					}
 				}
 			}
 		}

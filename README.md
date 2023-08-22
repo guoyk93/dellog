@@ -4,15 +4,23 @@ A simple tool to delete history log files
 
 ## Usage
 
-* Write rule files
+- Write rule files
 
   ```
-  # /etc/dellog.d/example
-  # keep 3 days for /example/**/*.log
-  /example/**/*.log:3
+  # /etc/dellog.d/example.yaml
+  
+  match: /example/**/*.log
+  size: 4g
+  days: 4
+  ---
+  match: 
+    - /example2/**/*.log
+    - /example3/**/*.log
+  size: 4g
+  days: 4
   ```
 
-* Execute `dellog`
+- Execute `dellog`
 
   ```shell
   dellog

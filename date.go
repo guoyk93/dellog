@@ -1,8 +1,13 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"time"
+)
+
+var (
+	ErrNoDateFound = errors.New("no date found in filename")
 )
 
 var (
@@ -12,39 +17,16 @@ var (
 	regexpDateDay   = regexpDate.SubexpIndex("d")
 )
 
-func DaysFromFilename(name string) (days int, ok bool) {
+func DateFromFilename(name string) (date time.Time, err error) {
 	matched := regexpDate.FindStringSubmatch(name)
 	if len(matched) == 0 {
+		err = ErrNoDateFound
 		return
 	}
-	date, err := time.ParseInLocation(
+	date, err = time.ParseInLocation(
 		"2006-01-02",
 		matched[regexpDateYear]+"-"+matched[regexpDateMonth]+"-"+matched[regexpDateDay],
 		time.Local,
 	)
-	if err != nil {
-		return
-	}
-	days = int(time.Since(date) / (time.Hour * 24))
-	ok = true
 	return
-}
-
-type Action int
-
-const (
-	ActionUnknownDate Action = iota
-	ActionSkip
-	ActionRemove
-)
-
-func EvaluateDays(name string, threshold int) Action {
-	days, ok := DaysFromFilename(name)
-	if !ok {
-		return ActionUnknownDate
-	}
-	if days <= threshold {
-		return ActionSkip
-	}
-	return ActionRemove
 }

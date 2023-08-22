@@ -2,20 +2,46 @@ package main
 
 import (
 	"bytes"
-	"fmt"
+	"gopkg.in/yaml.v3"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 )
 
-type Rule struct {
-	Pattern string
-	Days    int
+type RuleDoc struct {
+	Match SingleOrMulti[string] `yaml:"match,omitempty"`
+	Days  int64                 `yaml:"days,omitempty"`
+	Size  Capacity              `yaml:"size,omitempty"`
 }
 
-func LoadRules(dir string) (rules []Rule, err error) {
+func ParseRule(buf []byte) (rules []RuleDoc, err error) {
+	dec := yaml.NewDecoder(bytes.NewReader(buf))
+	for {
+		var rule RuleDoc
+		if err = dec.Decode(&rule); err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return
+		}
+		if len(rule.Match) == 0 {
+			continue
+		} else {
+			rules = append(rules, rule)
+		}
+	}
+}
+
+type Rule struct {
+	Match []string
+	Days  int64
+	Size  int64
+}
+
+func LoadRuleDir(dir string) (rules []Rule, err error) {
 	var entries []os.DirEntry
 
 	if entries, err = os.ReadDir(dir); err != nil {
@@ -32,60 +58,55 @@ func LoadRules(dir string) (rules []Rule, err error) {
 
 		log.Println("loading rules:", entry.Name())
 
-		var content []byte
-		if content, err = os.ReadFile(filepath.Join(dir, entry.Name())); err != nil {
+		var buf []byte
+		if buf, err = os.ReadFile(filepath.Join(dir, entry.Name())); err != nil {
 			return
 		}
 
-		for _, _line := range bytes.Split(content, []byte{'\n'}) {
-			line := string(bytes.TrimSpace(_line))
-			if len(line) == 0 {
+		var fileRules []RuleDoc
+		if fileRules, err = ParseRule(buf); err != nil {
+			return
+		}
+
+		for _, rule := range fileRules {
+			if len(rule.Match) == 0 || (rule.Size <= 0 && rule.Days <= 0) {
+				log.Println("invalid rule:", rule)
 				continue
 			}
-			if strings.HasPrefix(line, "#") {
-				continue
-			}
-			log.Println("rule:", line)
-			splits := strings.SplitN(line, ":", 2)
-			if len(splits) != 2 {
-				continue
-			}
-			var days int
-			if days, err = strconv.Atoi(splits[1]); err != nil {
-				return
-			}
-			if days < 1 {
-				err = fmt.Errorf("invalid days: %d", days)
-				return
-			}
+			patterns := rule.Match.Unwrap()
+			ExpandDoubleAsteriskPattern(&patterns)
 			rules = append(rules, Rule{
-				Pattern: splits[0],
-				Days:    days,
+				Match: patterns,
+				Days:  rule.Days,
+				Size:  rule.Size.Unwrap(),
 			})
 		}
 	}
 	return
 }
 
-const DoubleAsteriskPath = "**" + string(filepath.Separator)
+type Action int
 
-func ExpandRules(rules *[]Rule) {
-	var expanded []Rule
-	for _, rule := range *rules {
-		if strings.Contains(rule.Pattern, DoubleAsteriskPath) {
-			for i := 0; i < 5; i++ {
-				expanded = append(expanded, Rule{
-					Pattern: strings.ReplaceAll(
-						rule.Pattern,
-						DoubleAsteriskPath,
-						strings.Repeat("*"+string(filepath.Separator), i),
-					),
-					Days: rule.Days,
-				})
+const (
+	ActionSkip Action = iota
+	ActionRemove
+	ActionTruncate
+)
+
+func EvaluateRule(name string, rule Rule, now time.Time) Action {
+	if rule.Days > 0 {
+		if date, err := DateFromFilename(name); err == nil {
+			if now.Sub(date) > time.Duration(rule.Days)*24*time.Hour {
+				return ActionRemove
 			}
-		} else {
-			expanded = append(expanded, rule)
 		}
 	}
-	*rules = expanded
+	if rule.Size > 0 {
+		if info, err := os.Stat(name); err == nil {
+			if info.Size() > rule.Size {
+				return ActionTruncate
+			}
+		}
+	}
+	return ActionSkip
 }

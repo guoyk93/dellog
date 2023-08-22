@@ -1,0 +1,9 @@
+match:
+  - /hello/**/*.log
+  - /world.log
+days: 3
+---
+match:
+  - /world/**/*.csv
+  - /world.log
+size: 3k
