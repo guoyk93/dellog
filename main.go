@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/guoyk93/rg"
+	"github.com/yankeguo/rg"
 )
 
 func main() {
